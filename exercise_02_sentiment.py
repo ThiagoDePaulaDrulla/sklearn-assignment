@@ -1,63 +1,73 @@
-"""Build a sentiment analysis / polarity model
-
-Sentiment analysis can be casted as a binary text classification problem,
-that is fitting a linear classifier on features extracted from the text
-of the user messages so as to guess wether the opinion of the author is
-positive or negative.
-
-In this examples we will use a movie review dataset.
-
-"""
-# Author: Olivier Grisel <olivier.grisel@ensta.org>
-# License: Simplified BSD
-
-import sys
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.svm import LinearSVC
 from sklearn.pipeline import Pipeline
 from sklearn.model_selection import GridSearchCV
 from sklearn.datasets import load_files
 from sklearn.model_selection import train_test_split
-from sklearn import metrics
-
+from sklearn.linear_model import SGDClassifier
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfTransformer
+import numpy as np
+from sklearn.naive_bayes import MultinomialNB
 
 if __name__ == "__main__":
-    # NOTE: we put the following in a 'if __name__ == "__main__"' protected
-    # block to be able to use a multi-core grid search that also works under
-    # Windows, see: http://docs.python.org/library/multiprocessing.html#windows
-    # The multiprocessing module is used as the backend of joblib.Parallel
-    # that is used when n_jobs != 1 in GridSearchCV
 
-    # the training data folder must be passed as first argument
     movie_reviews_data_folder = r"./data"
     dataset = load_files(movie_reviews_data_folder, shuffle=False)
-    print("n_samples: %d" % len(dataset.data))
+    #print("n_samples: %d" % len(dataset.data))
+    
+    docs_new = ['Amazing', 'loved', 'Good']
 
-    # split the dataset in training and test set:
-    docs_train, docs_test, y_train, y_test = train_test_split(
-        dataset.data, dataset.target, test_size=0.25, random_state=None)
+    # Alterando o text_size para 0,40 a precisão de ambos métodos de classifcação melhoraram
+    docs_train, docs_test, y_train, y_test = train_test_split(dataset.data, dataset.target, test_size=0.40, random_state=None)
+    
+    #Classificador Support Vector Machine
+    text_clf_v = Pipeline([('vect', CountVectorizer()),
+                ('tfidf', TfidfTransformer()),
+                ('clf', SGDClassifier(loss='hinge', penalty='l2',alpha=1e-3, random_state=42,max_iter=5, tol=None)),
+                ])
+    text_clf_v.fit(dataset.data, dataset.target)  
 
-    # TASK: Build a vectorizer / classifier pipeline that filters out tokens
-    # that are too rare or too frequent
+    predicted = text_clf_v.predict(docs_new)
+    predicted = text_clf_v.predict(docs_test)
+    print('Vector Machine Precisão')
+    print(np.mean(predicted == y_test))
+    #
+    
+    #Classificador Naive bayes
+    text_clf_b = Pipeline([('vect', CountVectorizer()),
+                     ('tfidf', TfidfTransformer()),
+                     ('clf', MultinomialNB()),
+                     ])
 
-    # TASK: Build a grid search to find out whether unigrams or bigrams are
-    # more useful.
-    # Fit the pipeline on the training set using grid search for the parameters
+    text_clf_b.fit(dataset.data, dataset.target)  
+    predicted = text_clf_b.predict(docs_new)
+    predicted = text_clf_b.predict(docs_test)
+    print('Naive bayes Precisão')
+    print(np.mean(predicted == y_test))
 
-    # TASK: print the cross-validated scores for the each parameters set
-    # explored by the grid search
+    #GridSearchCV
+    parameters = {'vect__ngram_range': [(1, 1), (1, 2)],
+              'tfidf__use_idf': (True, False),
+              'clf__alpha': (1e-2, 1e-3),
+              }
+    gs_clf = GridSearchCV(text_clf_v, parameters, n_jobs=-1)
+    gs_clf = gs_clf.fit(dataset.data, dataset.target)
+    dataset.target_names[gs_clf.predict(['This film is amazing!'])[0]]
+    print('GridSearchCV Com Vector Machine:')
+    print(gs_clf.best_score_)
+    #for param_name in sorted(parameters.keys()):
+        #print("%s: %r" % (param_name, gs_clf.best_params_[param_name]))
+        
+    gs_clf = GridSearchCV(text_clf_b, parameters, n_jobs=-1)
+    gs_clf = gs_clf.fit(dataset.data, dataset.target)
+    dataset.target_names[gs_clf.predict(['This film is amazing!'])[0]]
+    print('GridSearchCV Com Naive bayes:')
+    print(gs_clf.best_score_)
+    print(gs_clf) 
+    #for param_name in sorted(parameters.keys()):
+        #print("%s: %r" % (param_name, gs_clf.best_params_[param_name]))
 
-    # TASK: Predict the outcome on the testing set and store it in a variable
-    # named y_predicted
-
-    # Print the classification report
-    print(metrics.classification_report(y_test, y_predicted,
-                                        target_names=dataset.target_names))
-
-    # Print and plot the confusion matrix
-    cm = metrics.confusion_matrix(y_test, y_predicted)
-    print(cm)
-
-    # import matplotlib.pyplot as plt
-    # plt.matshow(cm)
-    # plt.show()
+#Nos testes acima implementei dois classficadores o Support Vector Machine e o Naive Bayes e durante os testes percebi que era possível aumentar a precisão do algoritmo
+#Se eu aumentasse o text_size dos seus default 0.25 para 0.40, ambos os métodos na media aumentaram bastante a sua precisão,
+#mas o maior destaque fica Naive bayes que em todos os meus testes teve um valor superior ao vector machine.
+#Já ao aplicar o GridSerach o resultado foi o inverso, onde o vector machine conseguiu adquirir uma pequena vantagem sobre o naive bayes.
+#Os prints dos best params estão comentados com o objetivo de despoluir o console de prints 
